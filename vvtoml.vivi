@@ -100,17 +100,23 @@ toml_parse_value := () {
 
 // -- Main Parser --
 
-toml_parse := (text) {
+toml_parse := (raw_text) {
     toml_err = null
+    
+    // Explicitly cast to string immediately to satisfy the static checker
+    text := string(raw_text)
     toml_text = text
     toml_pos = 0
     
     root := []
     current_section := ""
     
-    while toml_pos < toml_text.len {
+    // Cache the length to avoid calling .len dynamically inside the loop
+    n := toml_text.len 
+    
+    while toml_pos < n {
         toml_skip_ws()
-        if toml_pos >= toml_text.len { break }
+        if toml_pos >= n { break }
         
         c := toml_at(toml_pos)
         
@@ -119,7 +125,7 @@ toml_parse := (text) {
             toml_advance() // skip [
             toml_skip_ws()
             sec_start := toml_pos
-            while toml_pos < toml_text.len and toml_at(toml_pos) != 93 {
+            while toml_pos < n and toml_at(toml_pos) != 93 {
                 toml_advance()
             }
             current_section = toml_text.substr(sec_start, toml_pos - sec_start)
@@ -129,7 +135,7 @@ toml_parse := (text) {
         
         // Key = Value
         key_start := toml_pos
-        while toml_pos < toml_text.len and toml_at(toml_pos) != 61 { // '='
+        while toml_pos < n and toml_at(toml_pos) != 61 { // '='
             toml_advance()
         }
         key := toml_text.substr(key_start, toml_pos - key_start).trim()
@@ -150,7 +156,6 @@ toml_parse := (text) {
     
     return root
 }
-
 toml_stringify := (data) {
     out := ""
     for k, v in data {
