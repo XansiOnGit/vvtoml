@@ -210,6 +210,45 @@ toml_quote := (s) {
     return out
 }
 
+toml_stringify := (data) {
+    out := ""
+    
+    // First pass: simple key-values (strings, numbers, bools)
+    for k, v in data {
+        if v == string {
+            out = out ~ string(k) ~ " = " ~ toml_quote(v) ~ "\n"
+        } else if v == i32 || v == i64 || v == f32 || v == f64 || v == bool {
+            out = out ~ string(k) ~ " = " ~ string(v) ~ "\n"
+        }
+    }
+    
+    // Second pass: tables (nested structs)
+    for k, v in data {
+        if v != null and v != string and v != i32 and v != i64 and v != f32 and v != f64 and v != bool {
+            // Check if it's an array (has integer keys) or a table (has string keys)
+            is_array := false
+            for kk, vv in v {
+                if kk == i32 || kk == i64 {
+                    is_array = true
+                }
+            }
+            
+            if !is_array {
+                out = out ~ "\n[" ~ string(k) ~ "]\n"
+                for k2, v2 in v {
+                    if v2 == string {
+                        out = out ~ string(k2) ~ " = " ~ toml_quote(v2) ~ "\n"
+                    } else if v2 == i32 || v2 == i64 || v2 == f32 || v2 == f64 || v2 == bool {
+                        out = out ~ string(k2) ~ " = " ~ string(v2) ~ "\n"
+                    }
+                }
+            }
+        }
+    }
+    
+    return out
+}
+
 toml_encode := (v) {
     if v == null { return "null" }
     if v == bool {
