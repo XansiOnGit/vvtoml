@@ -1,4 +1,6 @@
-// vvtoml.vivi
+// vvtoml.vivi - Simple TOML parser/serializer for Vivi
+
+#import "Strings"
 
 toml_text := ""
 toml_pos := 0
@@ -25,11 +27,13 @@ toml_fail := (msg) {
 toml_skip_ws := () {
     while toml_pos < toml_text.len {
         c := toml_at(toml_pos)
-        if c == 32 or c == 9 or c == 10 or c == 13 { toml_advance() } else { break }
+        if c == 32 or c == 9 or c == 10 or c == 13 {
+            toml_advance()
+        } else {
+            break
+        }
     }
 }
-
-// -- Value Parsers --
 
 toml_parse_string := () {
     toml_advance() // skip open quote
@@ -52,9 +56,9 @@ toml_parse_number := () {
     is_float := false
     while toml_pos < toml_text.len {
         c := toml_at(toml_pos)
-        if (c >= 48 and c <= 57) or c == 45 { // digit or minus
+        if (c >= 48 and c <= 57) or c == 45 {
             toml_advance()
-        } else if c == 46 { // dot
+        } else if c == 46 {
             is_float = true
             toml_advance()
         } else {
@@ -87,9 +91,7 @@ toml_parse_value := () {
     c := toml_at(toml_pos)
     
     if c == 34 { return toml_parse_string() }
-    
     if (c >= 48 and c <= 57) or c == 45 { return toml_parse_number() }
-    
     if toml_text.substr(toml_pos, 4) == "true" or toml_text.substr(toml_pos, 5) == "false" {
         return toml_parse_bool()
     }
@@ -98,20 +100,13 @@ toml_parse_value := () {
     return null
 }
 
-// -- Main Parser --
-
 toml_parse := (raw_text) {
     toml_err = null
-    
-    // Explicitly cast to string immediately to satisfy the static checker
-    text := string(raw_text)
-    toml_text = text
+    toml_text = string(raw_text)
     toml_pos = 0
     
     root := []
     current_section := ""
-    
-    // Cache the length to avoid calling .len dynamically inside the loop
     n := toml_text.len 
     
     while toml_pos < n {
@@ -128,17 +123,20 @@ toml_parse := (raw_text) {
             while toml_pos < n and toml_at(toml_pos) != 93 {
                 toml_advance()
             }
-            current_section = toml_text.substr(sec_start, toml_pos - sec_start)
+            raw_sec := toml_text.substr(sec_start, toml_pos - sec_start)
+            current_section = trim(raw_sec)
             toml_advance() // skip ]
             continue
         }
         
         // Key = Value
         key_start := toml_pos
-        while toml_pos < n and toml_at(toml_pos) != 61 { // '='
+        while toml_pos < n and toml_at(toml_pos) != 61 {
             toml_advance()
         }
-        key := toml_text.substr(key_start, toml_pos - key_start).trim()
+        raw_key := toml_text.substr(key_start, toml_pos - key_start)
+        key := trim(raw_key)
+        
         toml_advance() // skip '='
         
         val := toml_parse_value()
@@ -156,24 +154,32 @@ toml_parse := (raw_text) {
     
     return root
 }
+
 toml_stringify := (data) {
     out := ""
+    
+    // First pass: simple key-values
     for k, v in data {
         if v == string {
-            out = out ~ k ~ " = \"" ~ v ~ "\"\n"
-        } else if v == i64 or v == f64 or v == bool {
-            out = out ~ k ~ " = " ~ string(v) ~ "\n"
-        } else if v != null and v.len != null {
-            // It's a struct/table
-            out = out ~ "\n[" ~ k ~ "]\n"
+            out = out ~ string(k) ~ " = \"" ~ v ~ "\"\n"
+        } else if v == i32 || v == i64 || v == f32 || v == f64 || v == bool {
+            out = out ~ string(k) ~ " = " ~ string(v) ~ "\n"
+        }
+    }
+    
+    // Second pass: tables
+    for k, v in data {
+        if v != null and v != string and v != i32 and v != i64 and v != f32 and v != f64 and v != bool {
+            out = out ~ "\n[" ~ string(k) ~ "]\n"
             for k2, v2 in v {
                 if v2 == string {
-                    out = out ~ k2 ~ " = \"" ~ v2 ~ "\"\n"
+                    out = out ~ string(k2) ~ " = \"" ~ v2 ~ "\"\n"
                 } else {
-                    out = out ~ k2 ~ " = " ~ string(v2) ~ "\n"
+                    out = out ~ string(k2) ~ " = " ~ string(v2) ~ "\n"
                 }
             }
         }
     }
+    
     return out
 }
