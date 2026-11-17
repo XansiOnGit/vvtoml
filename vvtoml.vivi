@@ -1,11 +1,8 @@
-// vvtoml.vivi.
-// TOML v1.0.0 parser and serializer and such this is a test and i don't expect it to work.
+// vvtoml.vivi
 
 toml_text := ""
 toml_pos := 0
 toml_err := null
-toml_line := 1
-toml_col := 1
 
 toml_error := () {
     return toml_err
@@ -15,546 +12,163 @@ toml_at := (i) {
     return i64(toml_text.char_at(i))
 }
 
-toml_peek := (offset) {
-    if toml_pos + offset >= toml_text.len { return -1 }
-    return toml_at(toml_pos + offset)
-}
-
 toml_advance := () {
-    if toml_pos >= toml_text.len { return }
-    if toml_at(toml_pos) == 10 {
-        toml_line += 1
-        toml_col = 1
-    } else {
-        toml_col += 1
-    }
     toml_pos += 1
 }
 
 toml_fail := (msg) {
     if toml_err != null { return null }
-    toml_err = "toml: " ~ msg ~ " (line " ~ string(toml_line) ~ ", column " ~ string(toml_col) ~ ")"
+    toml_err = "toml: " ~ msg
     return null
-}
-
-toml_is_digit := (code) {
-    return code >= 48 and code <= 57
-}
-
-toml_is_hex := (code) {
-    return (code >= 48 and code <= 57) or (code >= 97 and code <= 102) or (code >= 65 and code <= 70)
-}
-
-toml_hexval := (code) {
-    if code >= 48 and code <= 57 { return code - 48 }
-    if code >= 97 and code <= 102 { return code - 87 }
-    if code >= 65 and code <= 70 { return code - 55 }
-    return -1
-}
-
-toml_utf8 := (cp) {
-    out := ""
-    if cp < 128 {
-        out = out ~ rune(cp)
-    } else if cp < 2048 {
-        out = out ~ rune(192 + i32(cp / 64))
-        out = out ~ rune(128 + cp % 64)
-    } else if cp < 65536 {
-        out = out ~ rune(224 + i32(cp / 4096))
-        out = out ~ rune(128 + i32(cp / 64) % 64)
-        out = out ~ rune(128 + cp % 64)
-    } else {
-        out = out ~ rune(240 + i32(cp / 262144))
-        out = out ~ rune(128 + i32(cp / 4096) % 64)
-        out = out ~ rune(128 + i32(cp / 64) % 64)
-        out = out ~ rune(128 + cp % 64)
-    }
-    return out
 }
 
 toml_skip_ws := () {
     while toml_pos < toml_text.len {
         c := toml_at(toml_pos)
-        if c == 32 or c == 9 { toml_advance() } else { break }
+        if c == 32 or c == 9 or c == 10 or c == 13 { toml_advance() } else { break }
     }
 }
 
-toml_skip_all := () {
+// -- Value Parsers --
+
+toml_parse_string := () {
+    toml_advance() // skip open quote
+    out := ""
     while toml_pos < toml_text.len {
         c := toml_at(toml_pos)
-        if c == 32 or c == 9 or c == 10 or c == 13 {
-            toml_advance()
-        } else if c == 35 {
-            while toml_pos < toml_text.len and toml_at(toml_pos) != 10 {
-                toml_advance()
-            }
-        } else {
-            break
-        }
-    }
-}
-
-toml_expect_eol := () {
-    toml_skip_ws()
-    if toml_pos >= toml_text.len { return true }
-    if toml_at(toml_pos) == 35 {
-        while toml_pos < toml_text.len and toml_at(toml_pos) != 10 {
-            toml_advance()
-        }
-        return true
-    }
-    if toml_at(toml_pos) == 10 {
-        toml_advance()
-        return true
-    }
-    toml_fail("expected newline or end of file")
-    return false
-}
-
-// ---- String / key parsers (declared in order, no stubs) ----
-
-toml_parse_basic_string := () {
-    if toml_at(toml_pos) != 34 { toml_fail("expected basic string"); return null }
-    toml_advance()
-    out := ""
-    while true {
-        if toml_pos >= toml_text.len {
-            toml_fail("unterminated basic string")
-            return null
-        }
-        c := toml_at(toml_pos)
-        if c == 34 {
+        if c == 34 { // close quote
             toml_advance()
             return out
-        }
-        if c == 10 or c == 13 {
-            toml_fail("newline not allowed in basic string")
-            return null
-        }
-        if c == 92 {
-            toml_advance()
-            if toml_pos >= toml_text.len {
-                toml_fail("unterminated escape")
-                return null
-            }
-            e := toml_at(toml_pos)
-            if e == 110 { out = out ~ rune(10); toml_advance() }
-            else if e == 116 { out = out ~ rune(9); toml_advance() }
-            else if e == 114 { out = out ~ rune(13); toml_advance() }
-            else if e == 34 { out = out ~ rune(34); toml_advance() }
-            else if e == 92 { out = out ~ rune(92); toml_advance() }
-            else if e == 98 { out = out ~ rune(8); toml_advance() }
-            else if e == 102 { out = out ~ rune(12); toml_advance() }
-            else if e == 117 {
-                toml_advance()
-                v := 0
-                for (k := 0; k < 4; k++) {
-                    if toml_pos >= toml_text.len { toml_fail("truncated unicode escape"); return null }
-                    h := toml_hexval(toml_at(toml_pos))
-                    if h < 0 { toml_fail("invalid unicode escape"); return null }
-                    v = v * 16 + h
-                    toml_advance()
-                }
-                out = out ~ toml_utf8(v)
-            }
-            else if e == 85 {
-                toml_advance()
-                v := 0
-                for (k := 0; k < 8; k++) {
-                    if toml_pos >= toml_text.len { toml_fail("truncated unicode escape"); return null }
-                    h := toml_hexval(toml_at(toml_pos))
-                    if h < 0 { toml_fail("invalid unicode escape"); return null }
-                    v = v * 16 + h
-                    toml_advance()
-                }
-                out = out ~ toml_utf8(v)
-            }
-            else {
-                toml_fail("invalid escape sequence")
-                return null
-            }
-        } else {
-            out = out ~ toml_text.char_at(toml_pos)
-            toml_advance()
-        }
-    }
-}
-
-toml_parse_literal_string := () {
-    if toml_at(toml_pos) != 39 { toml_fail("expected literal string"); return null }
-    toml_advance()
-    out := ""
-    while true {
-        if toml_pos >= toml_text.len {
-            toml_fail("unterminated literal string")
-            return null
-        }
-        c := toml_at(toml_pos)
-        if c == 39 {
-            toml_advance()
-            return out
-        }
-        if c == 10 or c == 13 {
-            toml_fail("newline not allowed in literal string")
-            return null
         }
         out = out ~ toml_text.char_at(toml_pos)
         toml_advance()
     }
+    toml_fail("unterminated string")
+    return null
 }
 
-toml_parse_key_part := () {
-    toml_skip_ws()
-    if toml_pos >= toml_text.len { toml_fail("expected key"); return null }
-    c := toml_at(toml_pos)
-    if c == 34 { return toml_parse_basic_string() }
-    if c == 39 { return toml_parse_literal_string() }
-    
+toml_parse_number := () {
     start := toml_pos
+    is_float := false
     while toml_pos < toml_text.len {
-        ch := toml_at(toml_pos)
-        if (ch >= 48 and ch <= 57) or (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95 or ch == 45 {
+        c := toml_at(toml_pos)
+        if (c >= 48 and c <= 57) or c == 45 { // digit or minus
+            toml_advance()
+        } else if c == 46 { // dot
+            is_float = true
             toml_advance()
         } else {
             break
         }
     }
-    if toml_pos == start {
-        toml_fail("expected key")
-        return null
-    }
-    return toml_text.substr(start, toml_pos - start)
-}
-
-toml_parse_dotted_key := () {
-    parts := []
-    part := toml_parse_key_part()
-    if part == null { return null }
-    parts.push(part)
-    toml_skip_ws()
-    while toml_pos < toml_text.len and toml_at(toml_pos) == 46 {
-        toml_advance()
-        next_part := toml_parse_key_part()
-        if next_part == null { return null }
-        parts.push(next_part)
-        toml_skip_ws()
-    }
-    return parts
-}
-
-toml_parse_number := () {
-    start := toml_pos
-    if toml_at(toml_pos) == 43 or toml_at(toml_pos) == 45 {
-        toml_advance()
-    }
-    
-    if toml_pos + 2 < toml_text.len {
-        p := toml_text.substr(toml_pos, 3)
-        if p == "inf" or p == "nan" {
-            toml_advance(); toml_advance(); toml_advance()
-            sign := 1.0
-            if toml_text.char_at(start) == 45 { sign = -1.0 }
-            if p == "inf" { return sign * f64(1.0 / 0.0) }
-            return sign * f64(0.0 / 0.0)
-        }
-    }
-
-    if toml_pos + 1 < toml_text.len and toml_at(toml_pos) == 48 {
-        p := toml_at(toml_pos + 1)
-        if p == 120 {
-            toml_advance(); toml_advance()
-            v := 0
-            while toml_pos < toml_text.len and (toml_is_hex(toml_at(toml_pos)) or toml_at(toml_pos) == 95) {
-                if toml_at(toml_pos) != 95 { v = v * 16 + toml_hexval(toml_at(toml_pos)) }
-                toml_advance()
-            }
-            return v
-        }
-        if p == 111 {
-            toml_advance(); toml_advance()
-            v := 0
-            while toml_pos < toml_text.len and ((toml_at(toml_pos) >= 48 and toml_at(toml_pos) <= 55) or toml_at(toml_pos) == 95) {
-                if toml_at(toml_pos) != 95 { v = v * 8 + (toml_at(toml_pos) - 48) }
-                toml_advance()
-            }
-            return v
-        }
-        if p == 98 {
-            toml_advance(); toml_advance()
-            v := 0
-            while toml_pos < toml_text.len and (toml_at(toml_pos) == 48 or toml_at(toml_pos) == 49 or toml_at(toml_pos) == 95) {
-                if toml_at(toml_pos) != 95 { v = v * 2 + (toml_at(toml_pos) - 48) }
-                toml_advance()
-            }
-            return v
-        }
-    }
-
-    is_float := false
-    while toml_pos < toml_text.len {
-        c := toml_at(toml_pos)
-        if toml_is_digit(c) or c == 95 { toml_advance() }
-        else if c == 46 { is_float = true; toml_advance() }
-        else if c == 101 or c == 69 {
-            is_float = true
-            toml_advance()
-            if toml_pos < toml_text.len and (toml_at(toml_pos) == 43 or toml_at(toml_pos) == 45) {
-                toml_advance()
-            }
-        } else { break }
-    }
-    
     raw := toml_text.substr(start, toml_pos - start)
-    clean := ""
-    for (i := 0; i < raw.len; i++) {
-        if raw.char_at(i) != "_" { clean = clean ~ raw.char_at(i) }
+    if is_float {
+        return f64(raw)
     }
-    
-    if is_float { return f64(clean) }
-    return i64(clean)
+    return i64(raw)
 }
 
 toml_parse_bool := () {
-    if toml_pos + 3 < toml_text.len and toml_text.substr(toml_pos, 4) == "true" {
-        toml_advance(); toml_advance(); toml_advance(); toml_advance()
+    if toml_text.substr(toml_pos, 4) == "true" {
+        toml_pos += 4
         return true
     }
-    if toml_pos + 4 < toml_text.len and toml_text.substr(toml_pos, 5) == "false" {
-        toml_advance(); toml_advance(); toml_advance(); toml_advance(); toml_advance()
+    if toml_text.substr(toml_pos, 5) == "false" {
+        toml_pos += 5
         return false
     }
     toml_fail("invalid boolean")
     return null
 }
 
-toml_parse_date := () {
-    start := toml_pos
-    while toml_pos < toml_text.len {
-        c := toml_at(toml_pos)
-        if toml_is_digit(c) or c == 45 or c == 58 or c == 84 or c == 90 or c == 43 or c == 46 or c == 32 {
-            toml_advance()
-        } else { break }
-    }
-    return toml_text.substr(start, toml_pos - start)
-}
-
-// Array and inline table need to call toml_parse_value, which is defined below.
-// In Vivi that's a problem — so we inline the dispatch here.
-toml_parse_value := (depth) {
+toml_parse_value := () {
     toml_skip_ws()
-    if toml_pos >= toml_text.len { toml_fail("expected value"); return null }
+    if toml_pos >= toml_text.len { toml_fail("unexpected end"); return null }
     c := toml_at(toml_pos)
     
-    if c == 34 {
-        if toml_peek(1) == 34 and toml_peek(2) == 34 {
-            toml_advance(); toml_advance(); toml_advance()
-            out := ""
-            while toml_pos < toml_text.len {
-                if toml_at(toml_pos) == 34 and toml_peek(1) == 34 and toml_peek(2) == 34 {
-                    toml_advance(); toml_advance(); toml_advance()
-                    return out
-                }
-                out = out ~ toml_text.char_at(toml_pos)
-                toml_advance()
-            }
-            toml_fail("unterminated multiline string")
-            return null
-        }
-        return toml_parse_basic_string()
-    }
-    if c == 39 {
-        if toml_peek(1) == 39 and toml_peek(2) == 39 {
-            toml_advance(); toml_advance(); toml_advance()
-            out := ""
-            while toml_pos < toml_text.len {
-                if toml_at(toml_pos) == 39 and toml_peek(1) == 39 and toml_peek(2) == 39 {
-                    toml_advance(); toml_advance(); toml_advance()
-                    return out
-                }
-                out = out ~ toml_text.char_at(toml_pos)
-                toml_advance()
-            }
-            toml_fail("unterminated multiline literal string")
-            return null
-        }
-        return toml_parse_literal_string()
+    if c == 34 { return toml_parse_string() }
+    
+    if (c >= 48 and c <= 57) or c == 45 { return toml_parse_number() }
+    
+    if toml_text.substr(toml_pos, 4) == "true" or toml_text.substr(toml_pos, 5) == "false" {
+        return toml_parse_bool()
     }
     
-    if c == 91 { // array
-        toml_advance()
-        arr := []
-        toml_skip_all()
-        if toml_pos < toml_text.len and toml_at(toml_pos) == 93 {
-            toml_advance()
-            return arr
-        }
-        while true {
-            toml_skip_all()
-            val := toml_parse_value(depth + 1)
-            if toml_err != null { return null }
-            arr.push(val)
-            toml_skip_all()
-            if toml_pos >= toml_text.len { toml_fail("unterminated array"); return null }
-            if toml_at(toml_pos) == 44 { toml_advance() }
-            else if toml_at(toml_pos) == 93 { toml_advance(); return arr }
-            else { toml_fail("expected comma or closing bracket in array"); return null }
-        }
-    }
-    if c == 123 { // inline table
-        toml_advance()
-        obj := []
-        toml_skip_ws()
-        if toml_pos < toml_text.len and toml_at(toml_pos) == 125 {
-            toml_advance()
-            return obj
-        }
-        while true {
-            toml_skip_ws()
-            keys := toml_parse_dotted_key()
-            if keys == null { return null }
-            toml_skip_ws()
-            if toml_pos >= toml_text.len or toml_at(toml_pos) != 61 {
-                toml_fail("expected '=' in inline table")
-                return null
-            }
-            toml_advance()
-            toml_skip_ws()
-            val := toml_parse_value(depth + 1)
-            if toml_err != null { return null }
-            
-            target := obj
-            for (i := 0; i < keys.count - 1; i++) {
-                if target[keys[i]] == null { target[keys[i]] = [] }
-                target = target[keys[i]]
-            }
-            target[keys[keys.count - 1]] = val
-            
-            toml_skip_ws()
-            if toml_pos >= toml_text.len { toml_fail("unterminated inline table"); return null }
-            if toml_at(toml_pos) == 44 { toml_advance() }
-            else if toml_at(toml_pos) == 125 { toml_advance(); return obj }
-            else { toml_fail("expected comma or closing brace in inline table"); return null }
-        }
-    }
-    
-    if toml_pos + 3 < toml_text.len {
-        p := toml_text.substr(toml_pos, 4)
-        if p == "true" { return toml_parse_bool() }
-    }
-    if toml_pos + 4 < toml_text.len {
-        p := toml_text.substr(toml_pos, 5)
-        if p == "false" { return toml_parse_bool() }
-    }
-    
-    if (c >= 48 and c <= 57) or c == 43 or c == 45 {
-        if toml_pos + 4 < toml_text.len and toml_at(toml_pos + 4) == 45 { return toml_parse_date() }
-        if toml_pos + 2 < toml_text.len and toml_at(toml_pos + 2) == 58 { return toml_parse_date() }
-        return toml_parse_number()
-    }
-    
-    toml_fail("unexpected character in value")
+    toml_fail("invalid value")
     return null
 }
 
+// -- Main Parser --
+
 toml_parse := (text) {
     toml_err = null
-    if text == rune { text = string(text) }
-    if text != string {
-        toml_err = "toml: input must be a string"
-        return null
-    }
     toml_text = text
     toml_pos = 0
-    toml_line = 1
-    toml_col = 1
     
     root := []
-    current_table_path := []
+    current_section := ""
     
-    while true {
-        toml_skip_all()
+    while toml_pos < toml_text.len {
+        toml_skip_ws()
         if toml_pos >= toml_text.len { break }
+        
         c := toml_at(toml_pos)
         
+        // Table Header [section]
         if c == 91 {
-            is_array_table := false
-            if toml_peek(1) == 91 {
-                is_array_table = true
-                toml_advance(); toml_advance()
-            } else {
-                toml_advance()
-            }
-            
-            path := toml_parse_dotted_key()
-            if path == null { return null }
+            toml_advance() // skip [
             toml_skip_ws()
-            if toml_pos >= toml_text.len { toml_fail("unterminated table header"); return null }
-            
-            if is_array_table {
-                if toml_at(toml_pos) != 93 or toml_peek(1) != 93 {
-                    toml_fail("expected ']]'")
-                    return null
-                }
-                toml_advance(); toml_advance()
-            } else {
-                if toml_at(toml_pos) != 93 {
-                    toml_fail("expected ']'")
-                    return null
-                }
+            sec_start := toml_pos
+            while toml_pos < toml_text.len and toml_at(toml_pos) != 93 {
                 toml_advance()
             }
-            if !toml_expect_eol() { return null }
-            
-            target := root
-            for (i := 0; i < path.count - 1; i++) {
-                key := path[i]
-                if target[key] == null { target[key] = [] }
-                target = target[key]
-            }
-            last := path[path.count - 1]
-            if is_array_table {
-                if target[last] == null { target[last] = [] }
-                new_table := []
-                target[last].push(new_table)
-                current_table_path = path
-            } else {
-                if target[last] == null { target[last] = [] }
-                current_table_path = path
-            }
+            current_section = toml_text.substr(sec_start, toml_pos - sec_start)
+            toml_advance() // skip ]
             continue
         }
         
-        keys := toml_parse_dotted_key()
-        if keys == null { return null }
-        toml_skip_ws()
-        if toml_pos >= toml_text.len or toml_at(toml_pos) != 61 {
-            toml_fail("expected '=' after key")
-            return null
+        // Key = Value
+        key_start := toml_pos
+        while toml_pos < toml_text.len and toml_at(toml_pos) != 61 { // '='
+            toml_advance()
         }
-        toml_advance()
-        val := toml_parse_value(0)
+        key := toml_text.substr(key_start, toml_pos - key_start).trim()
+        toml_advance() // skip '='
+        
+        val := toml_parse_value()
         if toml_err != null { return null }
-        if !toml_expect_eol() { return null }
         
-        full_path := []
-        for (i := 0; i < current_table_path.count; i++) { full_path.push(current_table_path[i]) }
-        for (i := 0; i < keys.count; i++) { full_path.push(keys[i]) }
-        
-        target := root
-        for (i := 0; i < full_path.count - 1; i++) {
-            key := full_path[i]
-            if target[key] == null { target[key] = [] }
-            target = target[key]
+        if current_section == "" {
+            root[key] = val
+        } else {
+            if root[current_section] == null {
+                root[current_section] = []
+            }
+            root[current_section][key] = val
         }
-        target[full_path[full_path.count - 1]] = val
     }
     
-    if toml_err != null { return null }
     return root
 }
 
-toml_parse_strict := (text) {
-    result := toml_parse(text)
-    if toml_err != null { panic(toml_err) }
-    return result
+toml_stringify := (data) {
+    out := ""
+    for k, v in data {
+        if v == string {
+            out = out ~ k ~ " = \"" ~ v ~ "\"\n"
+        } else if v == i64 or v == f64 or v == bool {
+            out = out ~ k ~ " = " ~ string(v) ~ "\n"
+        } else if v != null and v.len != null {
+            // It's a struct/table
+            out = out ~ "\n[" ~ k ~ "]\n"
+            for k2, v2 in v {
+                if v2 == string {
+                    out = out ~ k2 ~ " = \"" ~ v2 ~ "\"\n"
+                } else {
+                    out = out ~ k2 ~ " = " ~ string(v2) ~ "\n"
+                }
+            }
+        }
+    }
+    return out
 }
