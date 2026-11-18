@@ -3,12 +3,35 @@ a small toy I have been making for vivi.
 
 A TOML reader and writer for [Vivi](https://github.com/djxnzi/Vivi).
 
+## Installing the lib
 installing it is pretty easy.
 
 Put `vvtoml.vivi` in Vivi's `lib/core` folder, next to `io.vivi` and `sys.vivi`. Then import it by name
 Or other places that vivi can read however if using another folder that is not core you may have to use "Vvtoml.vivi"
 ```
 #import "Vvtoml"
+```
+## NixOS
+or installing on NixOS
+
+Add the flake input
+
+```nix
+vvtoml-src = {
+  url = "github:XansiOnGit/vvtoml";
+  flake = false;
+};
+```
+
+Add it to your Vivi package:
+
+```nix
+(inputs.vivi.packages.${pkgs.system}.default.overrideAttrs (old: {
+  installPhase = (old.installPhase or "") + ''
+    mkdir -p $out/lib/vivi/core
+    cp ${inputs.vvtoml-src}/vvtoml.vivi $out/lib/vivi/core/vvtoml.vivi
+  '';
+}))
 ```
 
 Don't use `as` with it. The library calls its own helper functions, so import it plain.
