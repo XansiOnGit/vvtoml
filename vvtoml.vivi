@@ -1,32 +1,4 @@
 // vvtoml.vivi
-//
-// TOML for Vivi. Modeled on json.vivi.
-//
-//   toml_parse(text) -> value          // null on bad input, see toml_error()
-//   toml_parse_strict(text) -> value   // panic()s on bad input (can't be caught)
-//   toml_error() -> string             // message from the last parse, null if ok
-//   toml_stringify(v) -> string        // value -> TOML text
-//
-// Mapping (same idea as Json):
-//   table   -> array with string keys   doc["package"]["name"]
-//   array   -> array                    doc["list"][0]
-//   string  -> string
-//   integer -> int
-//   float   -> f64
-//   boolean -> bool
-//
-// Supported: comments, [tables], [dotted.tables], dotted keys, quoted keys,
-//   "basic" and 'literal' strings (+ triple-quoted), escapes \n \t \r \b \f \\ \",
-//   integers (with _), floats (fraction + exponent), booleans, arrays
-//   (multi-line, nested), inline tables.
-// Not supported: [[array of tables]], \uXXXX escapes, hex/oct/bin ints,
-//   dates/times, inf/nan when parsing.
-//
-// Quirks (same as the Json lib):
-//   - parser state is module-level, so toml_parse isn't reentrant
-//   - {} and [] are both an empty array, check toml_error(), not the result
-//   - single-character keys may be runes when hand-written, use 2+ characters
-//   - every toml_ name in this file is visible globally once imported
 
 toml_text := ""
 toml_pos := 0
