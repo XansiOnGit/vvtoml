@@ -1,0 +1,137 @@
+#import "Io"
+#import "Sys"
+#import "Strings"
+#import "Vvtoml"
+
+// This file may require sudo depending on system, nixos usually will require it however.
+// As a quick showcase of what I was able to do not impressive per say however it is useful for
+// general usage of toml.
+  
+CFG :: "tasks.toml"
+
+sample := () {
+    return [
+        "title": "my tasks",
+        "tasks": [
+            "hello": ["desc": "say hi", "cmd": "echo hello from vivi"],
+            "date": ["desc": "show the date", "cmd": "date"],
+            "disk": ["desc": "disk usage here", "cmd": "df -h ."]
+        ]
+    ]
+}
+
+load := () {
+    if !file_exists(CFG) {
+        file_write(CFG, toml_stringify(sample()))
+        println(dim("created " ~ CFG))
+    }
+    doc := toml_parse(file_read(CFG))
+    if toml_error() != null {
+        eprintln(red(toml_error()))
+        exit(1)
+    }
+    return doc
+}
+
+is_number := (s) {
+    if s.len == 0 { return false }
+    for i := 0; i < s.len; i++ {
+        if !is_digit(s.char_at(i)) { return false }
+    }
+    return true
+}
+
+show_menu := (doc, names) {
+    title := toml_find(doc, "title")
+    if title == null { title = "tasks" }
+    tasks := toml_find(doc, "tasks")
+
+    println("")
+    println(bold(cyan(string(title))))
+    for i := 0; i < names.len; i++ {
+        task := toml_find(tasks, names[i])
+        desc := toml_find(task, "desc")
+        if desc == null { desc = "" }
+        println("  " ~ string(i + 1) ~ ") " ~ bold(names[i]) ~ dim("  " ~ string(desc)))
+    }
+    println(dim("  type a number or name, 'add' for a new task, 'quit' to leave"))
+}
+
+run_task := (tasks, name) {
+    task := toml_find(tasks, name)
+    if task == null {
+        println(red("no such task: " ~ name))
+        return
+    }
+    cmd := toml_find(task, "cmd")
+    if cmd == null {
+        println(red("task '" ~ name ~ "' has no cmd"))
+        return
+    }
+    println(dim("$ " ~ string(cmd)))
+    code := run(cmd)
+    if code == 0 {
+        println(green("ok"))
+    } else {
+        println(red("failed, exit code " ~ string(code)))
+    }
+}
+
+add_task := () {
+    name := trim(input("task name: "))
+    if name.len == 0 { return }
+    desc := trim(input("description: "))
+    cmd := trim(input("command: "))
+
+    doc := load()
+    tasks := toml_find(doc, "tasks")
+    if tasks == null { tasks = [] }
+    tasks[name] = ["desc": desc, "cmd": cmd]
+    doc["tasks"] = tasks
+
+    file_write(CFG, toml_stringify(doc))
+    println(green("saved to " ~ CFG))
+}
+
+while true {
+    doc := load()
+    tasks := toml_find(doc, "tasks")
+
+    names := []
+    if tasks != null {
+        for name, t in tasks {
+            names.push(string(name))
+        }
+    }
+    show_menu(doc, names)
+
+    choice := input("> ")
+    if choice == null { break }
+    if choice.len == 0 { break }
+    choice = trim(choice)
+    if choice == "" { continue }
+
+    if choice == "quit" { break }
+    if choice == "add" {
+        add_task()
+        continue
+    }
+
+    if tasks == null {
+        println(red("no tasks yet, type 'add'"))
+        continue
+    }
+
+    if is_number(choice) {
+        n := i32(choice)
+        if n >= 1 and n <= names.len {
+            run_task(tasks, names[n - 1])
+        } else {
+            println(red("no task #" ~ choice))
+        }
+    } else {
+        run_task(tasks, choice)
+    }
+}
+
+println("goodbye!")
