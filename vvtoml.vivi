@@ -121,8 +121,6 @@ toml_end_line := () {
     return false
 }
 
-// ---------------------------------------------------------------- strings
-
 toml_string := () {
     n := toml_text.len
     q := toml_at(toml_pos)
@@ -197,8 +195,6 @@ toml_string := () {
         }
     }
 }
-
-// ---------------------------------------------------------------- numbers
 
 toml_number := () {
     neg := false
@@ -688,7 +684,7 @@ toml_encode := (v) {
         return out ~ "]"
     }
 
-    out = "{ "
+    out = rune(123) ~ " "
     is_first := true
     for k2, item2 in v {
         if toml_is_null(item2) { continue }
@@ -696,7 +692,7 @@ toml_encode := (v) {
         is_first = false
         out = out ~ toml_key_fmt(k2) ~ " = " ~ toml_encode(item2)
     }
-    return out ~ " }"
+    return out ~ " " ~ rune(125)
 }
 
 toml_emit := (data, path) {
